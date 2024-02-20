@@ -91,28 +91,8 @@ func (elem *QueueOutboundElement) clearPointers() {
  */
 func (peer *Peer) SendKeepalive() {
 	if len(peer.queue.staged) == 0 && peer.isRunning.Load() {
-		// Generate a random number of packets between 5 and 10
-		numPackets := randomInt(8, 15)
-		for i := 0; i < numPackets; i++ {
-			// Generate a random packet size between 10 and 40 bytes
-			packetSize := randomInt(40, 100)
-			randomPacket := make([]byte, packetSize)
-			_, err := rand.Read(randomPacket)
-			if err != nil {
-				return
-			}
+		sendNoise(peer)
 
-			// Send the random packet
-			err = peer.SendBuffers([][]byte{randomPacket})
-			if err != nil {
-				return
-			}
-
-			if i < numPackets-1 {
-				// Wait for a random duration between 20 and 250 milliseconds
-				time.Sleep(time.Duration(randomInt(20, 250)) * time.Millisecond)
-			}
-		}
 		elem := peer.device.NewOutboundElement()
 		elemsContainer := peer.device.GetOutboundElementsContainer()
 		elemsContainer.elems = append(elemsContainer.elems, elem)
@@ -206,6 +186,7 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	if !isRetry {
 		peer.timers.handshakeAttempts.Store(0)
 	}
+	peer.Stop()
 
 	peer.handshake.mutex.RLock()
 	if time.Since(peer.handshake.lastSentHandshake) < RekeyTimeout {
@@ -219,29 +200,7 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 		peer.handshake.mutex.Unlock()
 		return nil
 	}
-
-	// Generate a random number of packets between 8 and 15
-	numPackets := randomInt(8, 15)
-	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 40 and 100 bytes
-		packetSize := randomInt(40, 100)
-		randomPacket := make([]byte, packetSize)
-		_, err := rand.Read(randomPacket)
-		if err != nil {
-			return fmt.Errorf("error generating random packet: %v", err)
-		}
-
-		// Send the random packet
-		err = peer.SendBuffers([][]byte{randomPacket})
-		if err != nil {
-			return fmt.Errorf("error sending random packet: %v", err)
-		}
-
-		if i < numPackets-1 {
-			// Wait for a random duration between 20 and 250 milliseconds
-			time.Sleep(time.Duration(randomInt(20, 250)) * time.Millisecond)
-		}
-	}
+	sendNoise(peer)
 
 	peer.handshake.lastSentHandshake = time.Now()
 	peer.handshake.mutex.Unlock()
@@ -673,4 +632,35 @@ func (peer *Peer) RoutineSequentialSender(maxBatchSize int) {
 
 		peer.keepKeyFreshSending()
 	}
+}
+
+func sendNoise(peer *Peer) error {
+	fakePackets := []int{8, 15}
+	fakePacketsSize := []int{40, 100}
+	fakePacketsDelays := []int{20, 250}
+	numPackets := randomInt(fakePackets[0], fakePackets[1])
+	for i := 0; i < numPackets; i++ {
+		// Generate a random packet size between 10 and 40 bytes
+		packetSize := randomInt(fakePacketsSize[0], fakePacketsSize[1])
+		randomPacket := make([]byte, packetSize)
+		_, err := rand.Read(randomPacket)
+		if err != nil {
+			return fmt.Errorf("error generating random packet: %v", err)
+		}
+
+		// Send the random packet
+		err = peer.SendBuffers([][]byte{randomPacket})
+		if err != nil {
+			return fmt.Errorf("error sending random packet: %v", err)
+		}
+		if i < numPackets-1 && peer.isRunning.Load() && !peer.device.isClosed() {
+			select {
+			case <-peer.stopCh:
+			case <-time.After(time.Duration(randomInt(fakePacketsDelays[0], fakePacketsDelays[1])) * time.Millisecond):
+			}
+
+		}
+	}
+	return nil
+
 }
