@@ -25,18 +25,6 @@ type Flags struct {
 	Rtt            int
 }
 
-var validFlags = map[string]bool{
-	"-v":       true,
-	"-b":       true,
-	"-e":       true,
-	"-k":       true,
-	"-country": true,
-	"-cfon":    true,
-	"-gool":    true,
-	"-scan":    true,
-	"-rtt":     true,
-}
-
 func newFlags() *Flags {
 	return &Flags{}
 }
@@ -99,7 +87,7 @@ func validateFlags(f *Flags) error {
 		return fmt.Errorf("invalid bindAddress format: %s", f.BindAddress)
 	}
 
-	if ip := net.ParseIP(f.Endpoint); ip == nil {
+	if ip := net.ParseIP(f.Endpoint); ip == nil && f.Endpoint != "notset" {
 		return fmt.Errorf("invalid warp clean IP: %s", f.Endpoint)
 	}
 
@@ -114,28 +102,22 @@ func validateFlags(f *Flags) error {
 			validCountries = append(validCountries, code)
 		}
 
-		return fmt.Errorf("invalid country code: %s. Valid country codes: $s", f.Country, validCountries)
+		return fmt.Errorf("invalid country code: %s. Valid country codes: %s", f.Country, validCountries)
 	}
 
 	return nil
 }
 
 func main() {
-	// Check for unexpected flags
-	for _, arg := range os.Args[1:] {
-		if !validFlags[arg] {
-			log.Fatalf("Invalid flag: %s", arg)
-		}
-	}
 
 	flags := newFlags()
 	flags.setup()
 
 	if err := validateFlags(flags); err != nil {
-		log.Fatalf("Validatrion error: %v", err)
+		log.Fatalf("Validation error: %v", err)
 	}
 
-	sigchan := make(chan os.Signal)
+	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
 	ctx, cancel := context.WithCancel(context.Background())
 
